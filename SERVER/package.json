@@ -1,0 +1,22 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js",
+    "server": "node --env-file=.env --watch server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "type": "module",
+  "dependencies": {
+    "@langchain/core": "^0.3.44",
+    "@langchain/openai": "^0.5.5",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "langchain": "^0.3.21"
+  }
+}
