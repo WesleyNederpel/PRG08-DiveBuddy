@@ -1,33 +1,30 @@
-// Houd de chatgeschiedenis bij in een array
+// Global state
 let messages = [];
-let isProcessing = false; // Vergrendelingsmechanisme
+let isProcessing = false;
 
-// Functie om chatgeschiedenis op te slaan in localStorage
+// Local storage functions
 function saveChatToLocalStorage() {
     localStorage.setItem("chatHistory", JSON.stringify(messages));
 }
 
-// Functie om chatgeschiedenis te laden uit localStorage
 function loadChatFromLocalStorage() {
     const savedChats = JSON.parse(localStorage.getItem("chatHistory")) || [];
-    messages = savedChats; // Laad de opgeslagen berichten in de array
+    messages = savedChats;
 
     savedChats.forEach(chat => {
-        displayMessage(chat.content, chat.role); // Verwerk opgeslagen berichten (AI/human)
+        displayMessage(chat.content, chat.role);
     });
 }
 
-// Functie om een enkel chatbericht weer te geven
+// UI functions
 function displayMessage(content, role = "human") {
     const chatContainer = document.getElementById("chatContainer");
 
-    // Create a div for the message
     const messageDiv = document.createElement("div");
     messageDiv.className = `flex ${
         role === "ai" ? "justify-start" : "justify-end"
     }`;
 
-    // Create a bubble for the content
     const bubble = document.createElement("div");
     bubble.className = `px-4 py-2 rounded-lg max-w-xs text-sm ${
         role === "ai"
@@ -36,21 +33,25 @@ function displayMessage(content, role = "human") {
     }`;
     bubble.innerText = content;
 
-    // Add the bubble to the message div
     messageDiv.appendChild(bubble);
     chatContainer.appendChild(messageDiv);
-
-    // Scroll naar het laatste bericht
+    
+    // Auto-scroll to latest message
     chatContainer.scrollTop = chatContainer.scrollHeight;
 
-    return bubble; // Return de bubble
+    return bubble;
 }
 
-// Functie om een prompt te verwerken en te versturen naar de AI
+function scrollToBottom() {
+    const chatContainer = document.getElementById("chatContainer");
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+// API interaction functions
 async function handlePromptSubmission() {
     if (isProcessing) {
         alert("Please wait for the AI to finish responding.");
-        return; // Stop als er al een AI-antwoordsessie bezig is
+        return;
     }
 
     const promptInput = document.getElementById("promptInput");
@@ -58,99 +59,117 @@ async function handlePromptSubmission() {
 
     if (!promptValue) {
         alert("Please enter a valid question.");
-        return; // Stop als de gebruiker niets invoert
+        return;
     }
 
-    // Zet de vergrendeling aan
+    // Lock the UI during processing
     isProcessing = true;
-    promptInput.disabled = true; // Schakel de invoer tijdelijk uit
+    promptInput.disabled = true;
     document.getElementById("promptBtn").disabled = true;
 
-    // Voeg gebruikersprompt toe aan de chatgeschiedenis
+    // Add user message to chat
     messages.push({ role: "human", content: promptValue });
-    displayMessage(promptValue, "human"); // Toon het bericht van de gebruiker
+    displayMessage(promptValue, "human");
 
-    // Plaats een lege placeholder voor het AI-antwoord
+    // Create placeholder for AI response
     const aiBubble = displayMessage("", "ai");
-
-    // Leeg het invoerveld
+    
+    // Clear input field
     promptInput.value = "";
 
     try {
-        // Verstuur een POST-aanvraag naar de server met de volledige chatgeschiedenis
+        // Send request to the server
         const response = await fetch("http://localhost:3000/ask", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                prompt: promptValue,        // Voeg de huidige invoer van de gebruiker toe
-                chatHistory: messages       // Inclusief de volledige chatgeschiedenis
+                prompt: promptValue,
+                chatHistory: messages
             }),
         });
 
+        // Handle streaming response
         const reader = response.body.getReader();
         const decoder = new TextDecoder("utf-8");
         let done = false;
-        let responseContent = ""; // Om het volledige antwoord te reconstrueren
+        let responseContent = "";
 
-        // Lees de stream terwijl het antwoord binnenkomt
         while (!done) {
             const { value, done: streamDone } = await reader.read();
             done = streamDone;
             responseContent += decoder.decode(value, { stream: true });
-            aiBubble.innerText = responseContent; // Update het antwoord op het scherm
-
-            document.getElementById("chatContainer").scrollTop =
-                document.getElementById("chatContainer").scrollHeight;
+            aiBubble.innerText = responseContent;
+            scrollToBottom();
         }
 
-        // Voeg het AI-antwoord toe aan de chatgeschiedenis
+        // Save the complete conversation
         messages.push({ role: "ai", content: responseContent });
-        saveChatToLocalStorage(); // Sla de geschiedenis op in localStorage
+        saveChatToLocalStorage();
     } catch (err) {
         console.error("Error:", err);
         aiBubble.innerText = "Blub... Something went wrong.";
     } finally {
-        // Zet de vergrendeling uit
+        // Unlock the UI
         isProcessing = false;
-        promptInput.disabled = false; // Schakel de invoer opnieuw in
+        promptInput.disabled = false;
         document.getElementById("promptBtn").disabled = false;
     }
 }
 
-// Functie om de chatgeschiedenis te resetten
+async function fetchJoke() {
+    if (isProcessing) {
+        alert("Please wait for the current response to finish.");
+        return;
+    }
+    
+    isProcessing = true;
+    
+    try {
+        const jokeBubble = displayMessage("Thinking of a funny joke...", "ai");
+        
+        const response = await fetch("http://localhost:3000/");
+        const data = await response.json();
+        
+        jokeBubble.innerText = data.message;
+        
+        messages.push({ role: "ai", content: data.message });
+        saveChatToLocalStorage();
+    } catch (err) {
+        console.error("Error fetching joke:", err);
+        displayMessage("Sorry, I couldn't think of a joke right now.", "ai");
+    } finally {
+        isProcessing = false;
+    }
+}
+
+// Water data is now automatically fetched when relevant to the query
+
 function resetChatHistory() {
     if (isProcessing) {
         alert("Please wait for the current response to finish before resetting.");
-        return; // Voorkom resetten terwijl een prompt wordt verwerkt
+        return;
     }
 
-    messages = []; // Wis de huidige chatgeschiedenis
-    localStorage.removeItem("chatHistory"); // Verwijder ook uit localStorage
+    messages = [];
+    localStorage.removeItem("chatHistory");
 
     const chatContainer = document.getElementById("chatContainer");
     chatContainer.innerHTML = "";
 }
 
-
-// Registreer een event listener voor de Enter-toets op het invoerveld
+// Event listeners
 document.getElementById("promptInput").addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
-        event.preventDefault(); // Voorkom standaard Enter-gedrag
-        handlePromptSubmission(); // Verwerk en verstuur prompt
+        event.preventDefault();
+        handlePromptSubmission();
     }
 });
 
-// Functie uitvoeren bij klikken op de verzendknop
-document.getElementById("promptBtn").addEventListener("click", () => {
-    handlePromptSubmission();
-});
+document.getElementById("promptBtn").addEventListener("click", handlePromptSubmission);
+document.getElementById("resetChat").addEventListener("click", resetChatHistory);
+document.getElementById("jokeBtn").addEventListener("click", fetchJoke);
 
-// Functie om de chatgeschiedenis te resetten wanneer op de "reset" knop wordt geklikt
-document.getElementById("resetChat").addEventListener("click", () => {
-    resetChatHistory();
-});
-
-// Laad opgeslagen chatgeschiedenis wanneer de pagina wordt geladen
+// Initialize on page load
 window.onload = () => {
     loadChatFromLocalStorage();
 };

@@ -6,51 +6,61 @@
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gradient-to-b from-sky-300 to-blue-800 text-white font-sans min-h-screen flex flex-col justify-between">
+    <header class="py-6 text-center bg-black bg-opacity-30">
+        <h1 class="text-3xl font-bold">🦈 Dive Buddy AI Assistant 🌊</h1>
+        <p class="mt-2">Dive deep into a world of knowledge and fun!</p>
+    </header>
 
-<header class="py-6 text-center bg-black bg-opacity-30">
-    <h1 class="text-3xl font-bold">🦈 Dive Buddy AI Assistant 🌊</h1>
-    <p class="mt-2">Dive deep into a world of knowledge and fun!</p>
-</header>
+    <main class="flex-1 container mx-auto p-6 flex flex-col space-y-4">
+        <!-- Chat container -->
+        <section id="chatContainer" class="flex-1 overflow-y-auto bg-white bg-opacity-10 rounded-lg p-4 space-y-4">
+            <!-- Chat messages will appear here -->
+        </section>
 
-<main class="flex-1 container mx-auto p-6 flex flex-col space-y-4">
+        <!-- Input section -->
+        <section>
+            <div class="flex items-center space-x-4">
+                <input 
+                    type="text" 
+                    id="promptInput" 
+                    placeholder="Ask a diving-related question...🤿"
+                    class="py-2 px-4 rounded-lg w-full text-gray-800"
+                />
+                <button 
+                    id="promptBtn" 
+                    class="bg-cyan-500 hover:bg-cyan-700 text-white font-bold py-2 px-6 rounded-lg transition duration-300 flex items-center justify-center space-x-2"
+                >
+                    <span>Send</span>
+                    <span>🐬</span>
+                </button>
+            </div>
+        </section>
 
-    <!-- Chat container -->
-    <section id="chatContainer" class="flex-1 overflow-y-auto bg-white bg-opacity-10 rounded-lg p-4 space-y-4">
-        <!-- Hier worden chatberichten weergegeven -->
-    </section>
-
-    <!-- Input -->
-    <section>
-        <div class="flex items-center space-x-4">
-            <input type="text" id="promptInput" placeholder="Ask a diving-related question...🤿"
-                   class="py-2 px-4 rounded-lg w-full text-gray-800"/>
-            <button id="promptBtn" class="bg-cyan-500 hover:bg-cyan-700 text-white font-bold py-2 px-6 rounded-lg transition duration-300 flex items-center justify-center space-x-2">
-                <span>Send</span>
-                <span>🐬</span>
+        <!-- Joke button -->
+        <section class="text-center my-4">
+            <button 
+                id="jokeBtn" 
+                class="bg-cyan-500 hover:bg-cyan-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300"
+            >
+                Tell me an underwater joke 🐠
             </button>
-        </div>
-    </section>
+        </section>
 
-    <!-- Joke button -->
-    <section class="text-center my-4">
-        <button id="jokeBtn" class="bg-cyan-500 hover:bg-cyan-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300">
-            Tell me an underwater joke 🐠
-        </button>
-    </section>
+        <!-- Reset chat history -->
+        <section class="text-center">
+            <button 
+                id="resetChat" 
+                class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg transition duration-300"
+            >
+                Reset Chat History ❌
+            </button>
+        </section>
+    </main>
 
-    <!-- Reset chat history -->
-    <section class="text-center">
-        <button id="resetChat" class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg transition duration-300">
-            Reset Chat History ❌
-        </button>
-    </section>
-</main>
+    <footer class="py-4 bg-black bg-opacity-30 text-center text-sm">
+        &copy; DiveAI 2025 - Safe and Fun Diving!
+    </footer>
 
-<footer class="py-4 bg-black bg-opacity-30 text-center text-sm">
-    &copy; DiveAI 2025 - Safe and Fun Diving!
-</footer>
-
-<script src="script.js"></script>
-
+    <script src="script.js"></script>
 </body>
 </html>
