@@ -1,7 +1,23 @@
 import { AzureChatOpenAI } from "@langchain/openai";
+import { createStuffDocumentsChain } from "langchain/chains/combine_documents";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { StringOutputParser } from "@langchain/core/output_parsers";
 import express from "express";
 import cors from "cors";
 import fetch from "node-fetch";
+import { getVectorStore } from "./embed.js";
+
+// Helper function to log chunks retrieved from the vector store
+function logRelevantChunks(query, docs) {
+    console.log("\n=== Zoekresultaten voor vraag: '" + query + "' ===");
+    console.log("Aantal gevonden chunks:", docs.length);
+    docs.forEach((doc, index) => {
+        console.log(`\nChunk ${index + 1}:`);
+        console.log("-".repeat(50));
+        console.log(doc.pageContent.trim());
+        console.log("-".repeat(50));
+    });
+}
 
 // Initialize express app and middleware
 const app = express();
@@ -10,13 +26,25 @@ app.use(cors());
 app.use(express.urlencoded({ extended: true }));
 
 // Initialize the Azure OpenAI model
-const model = new AzureChatOpenAI({ temperature: 1 });
+const model = new AzureChatOpenAI({ temperature: 0.3 });
+
+// Initialize vector store - will be loaded once at startup
+let vectorStore;
+(async () => {
+    try {
+        vectorStore = await getVectorStore();
+        console.log("Vector store loaded successfully");
+    } catch (error) {
+        console.error("Error loading vector store:", error);
+    }
+})();
 
 // System prompt for maintaining the diving instructor persona
 const SYSTEM_PROMPT = `You are a diving instructor. You respond like you are talking with students and use diving terms. 
 You are also knowledgeable about Dutch water data from Rijkswaterstaat and can discuss water levels, temperature, and safety conditions.
 When users ask about Dutch water conditions, water temperature, water levels, or water flow ("watertemperatuur", "waterstanden", "waterstroom") in Dutch or English,
-you'll automatically provide the most recent data from Rijkswaterstaat's monitoring system.`;
+you'll automatically provide the most recent data from Rijkswaterstaat's monitoring system.
+You have access to a comprehensive diving handbook that you can reference when answering questions.`;
 
 // Base URL for the Rijkswaterstaat water data API
 const WATER_API_BASE_URL = "https://waterwebservices.rijkswaterstaat.nl/ONLINEWAARNEMINGENSERVICES_DBO/OphalenLaatsteWaarnemingen";
@@ -39,6 +67,21 @@ const MEASUREMENT_TYPES = {
     "STROOMSHD": "Stroomsnelheid (water current speed) in cm/s"
 };
 
+// Prompt template for RAG
+const RAG_PROMPT = ChatPromptTemplate.fromMessages([
+    ["system", `You are an expert diving instructor. 
+    Use ONLY the following pieces of context to answer the question at the end.
+    You must ONLY provide information that is explicitly mentioned in the context.
+    If specific details are mentioned in the context, include them exactly as they appear.
+    If you don't know the answer based on the context, just say that you don't have enough information.
+    Do not make up or infer information that isn't directly stated in the context.
+    Always answer as a diving instructor would, using appropriate diving terminology.`],
+    ["human", "{question}"],
+    ["ai", "I'll help answer that using the specific information from our diving handbook."],
+    ["human", "Here's some context that might help: {context}"],
+]);
+
+
 // Endpoint for joke responses
 app.get("/", async (req, res) => {
     try {
@@ -47,6 +90,54 @@ app.get("/", async (req, res) => {
     } catch (err) {
         console.error("Error fetching joke:", err);
         res.status(500).json({ error: "Failed to generate joke" });
+    }
+});
+
+// Add a new endpoint for querying the handbook directly
+app.post("/query-handbook", async (req, res) => {
+    const { query } = req.body;
+    
+    if (!query || typeof query !== "string") {
+        return res.status(400).json({ error: "Invalid or missing query" });
+    }
+    
+    try {
+        if (!vectorStore) {
+            return res.status(500).json({ error: "Vector store not loaded yet" });
+        }
+        
+        // Retrieve relevant documents from vector store
+        const retriever = vectorStore.asRetriever(4); // Get top 4 most relevant chunks
+        const relevantDocs = await retriever.getRelevantDocuments(query);
+        
+        // Direct logging instead of using the function
+        console.log("\n=== Zoekresultaten voor vraag: '" + query + "' ===");
+        console.log("Aantal gevonden chunks:", relevantDocs.length);
+        
+        relevantDocs.forEach((doc, index) => {
+            console.log(`\nChunk ${index + 1}:`);
+            console.log("-".repeat(50));
+            console.log(doc.pageContent.trim());
+            console.log("-".repeat(50));
+        });
+        
+        // Create a chain to process the documents
+        const ragChain = await createStuffDocumentsChain({
+            llm: model,
+            prompt: RAG_PROMPT,
+            outputParser: new StringOutputParser(),
+        });
+        
+        // Generate response from relevant documents
+        const response = await ragChain.invoke({
+            question: query,
+            context: relevantDocs,
+        });
+        
+        res.json({ message: response });
+    } catch (error) {
+        console.error("Error querying handbook:", error);
+        res.status(500).json({ error: "Failed to query handbook" });
     }
 });
 
@@ -71,6 +162,28 @@ function isWaterDataQuery(prompt) {
     
     const lowerPrompt = prompt.toLowerCase();
     return waterKeywords.some(keyword => lowerPrompt.includes(keyword));
+}
+
+/**
+ * Determines if a query might be related to information in the diving handbook
+ * @param {string} prompt - The user's query
+ * @returns {boolean} - Whether the query is potentially about diving information
+ */
+function isDivingInfoQuery(prompt) {
+    // Diving-related keywords
+    const divingKeywords = [
+        "dive", "diving", "scuba", "underwater", "marine", "ocean", "sea",
+        "equipment", "safety", "pressure", "depth", "decompression", "buoyancy",
+        "regulator", "tank", "wetsuit", "mask", "fins", "certification", "course",
+        "marine life", "coral", "fish", "ecosystem", "environment", "conservation",
+        "duikuitrusting", "duikles", "duikveiligheid", // Dutch terms
+        "duiken", "duiklocatie", "duikplek", "duikstek", "meer", "plas", 
+        "berendonck", "wijchen", "gelderland", "noord-holland", "zeeland", 
+        "limburg", "overijssel", "nederland"
+    ];
+    
+    const lowerPrompt = prompt.toLowerCase();
+    return divingKeywords.some(keyword => lowerPrompt.includes(keyword));
 }
 
 /**
@@ -180,8 +293,11 @@ app.post("/ask", async (req, res) => {
     }
 
     try {
-        // Check if the query is related to water data
+        // Context variables for different data sources
         let waterDataContext = "";
+        let handbookContext = "";
+
+        // Check if the query is related to water data
         if (isWaterDataQuery(prompt)) {
             // Determine the measurement type and station based on the query
             const measurementType = determineMeasurementType(prompt);
@@ -208,6 +324,27 @@ app.post("/ask", async (req, res) => {
             }
         }
 
+        // Check if the query might be related to diving info from the handbook
+        if (isDivingInfoQuery(prompt) && vectorStore) {
+            console.log("Diving info query detected. Fetching relevant information from handbook.");
+            
+            try {
+                // Retrieve relevant documents from vector store
+                const retriever = vectorStore.asRetriever(2); // Get top 2 most relevant chunks
+                const relevantDocs = await retriever.getRelevantDocuments(prompt);
+                
+                if (relevantDocs.length > 0) {
+                    // Extract relevant content from documents
+                    handbookContext = "Here's relevant information from the diving handbook:\n\n" +
+                        relevantDocs.map(doc => doc.pageContent).join("\n\n");
+                    
+                    console.log("Retrieved relevant handbook information");
+                }
+            } catch (handbookError) {
+                console.error("Error retrieving handbook information:", handbookError);
+            }
+        }
+
         // Prepare messages for the LLM
         let messages = [
             ["system", SYSTEM_PROMPT],
@@ -217,9 +354,13 @@ app.post("/ask", async (req, res) => {
             ])
         ];
         
-        // Add water data context if available, otherwise just the user's prompt
-        if (waterDataContext) {
-            messages.push(["human", `${prompt}\n\n[Additional context for AI: ${waterDataContext}]`]);
+        // Combine all context and add to the prompt
+        let combinedContext = "";
+        if (waterDataContext) combinedContext += waterDataContext + "\n\n";
+        if (handbookContext) combinedContext += handbookContext;
+        
+        if (combinedContext) {
+            messages.push(["human", `${prompt}\n\n[Additional context for AI: ${combinedContext}]`]);
         } else {
             messages.push(["human", prompt]);
         }
